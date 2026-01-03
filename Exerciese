@@ -1,0 +1,31 @@
+#Обчислити відсоток виконання накопичувальних доходів від накопичувальних цілей (predict) в розрізі дня. Використай оператор UNION щоб об'єднати дані про доходи та цілі.
+select
+      distinct pdate,
+      sum(price) over (order by pdate)/
+      sum(predict) over (order by pdate)*100 as per_of_predict,
+
+from(
+
+select
+      rp.date as pdate,
+      rp.predict as predict,
+      0 as price
+
+from `DA.revenue_predict` rp
+
+union all
+
+select 
+      s.date as sdate,
+      0 as predict,
+      sum(p.price) as price
+
+from `DA.session` s
+join `DA.order` o
+on o.ga_session_id = s.ga_session_id
+join `DA.product` p
+on p.item_id = o.item_id
+group by 1
+
+)aa
+order by 1 desc
