@@ -1,0 +1,140 @@
+with account as (
+select
+        date as sent_date,
+        country as country,
+        send_interval,
+        is_verified,
+        is_unsubscribed,
+        count (distinct acs.account_id) as account_cnt
+  from `DA.session_params` sp
+  join `DA.account_session`acs
+  on acs.ga_session_id = sp.ga_session_id
+  join `DA.account` acc
+  on acc.id = acs.account_id
+  join `DA.session` s
+  on s.ga_session_id = acs.ga_session_id
+  group by 1,2,3,4,5
+), Email_metrics as 
+(
+select
+      date_add (s.date,interval sent_date day) as sent_date,
+      country as country,
+      send_interval,
+      is_verified as is_verified,
+      is_unsubscribed as is_unsubscribed,
+      count (distinct es.id_message) as sent_cnt,
+      count (distinct eo.id_message) as open_cnt,
+      count (distinct ev.id_message) as visit_cnt
+      
+from `DA.email_sent` es
+left join `DA.email_open` eo
+on es.id_message = eo.id_message
+left join `DA.email_visit` ev
+on ev.id_message = eo.id_message
+left join `DA.account` acc
+on acc.id = es.id_account
+join `DA.account_session` acs
+on acs.account_id = acc.id
+join `DA.session` s
+on s.ga_session_id = acs.ga_session_id
+join `DA.session_params` sp
+on sp.ga_session_id = s.ga_session_id
+group by 1,2,3,4,5 
+), unions as 
+(
+#Об'єднання (UNION ALL) даних із account та email_metrics в одну таблицю
+
+select
+      sent_date,
+      em.country as country,
+      em.send_interval,
+      em.is_verified as is_verified,
+      em.is_unsubscribed as is_unsubscribed,
+      null as account_cnt,
+      sent_cnt,
+      open_cnt,
+      visit_cnt
+      
+from email_metrics em
+
+union all
+
+select
+      sent_date,
+      country,
+      send_interval,
+      is_verified,
+      is_unsubscribed,
+      account_cnt,
+      0 as sent_cnt,
+      0 as open_cnt,
+      0 as visit_cnt
+from account
+
+
+
+), final_groups as
+(
+      select
+      sent_date,
+      country,
+      send_interval,
+      is_verified,
+      is_unsubscribed,
+      sum(account_cnt) as account_cnt,
+      sum(sent_cnt) as sent_cnt,
+      sum(open_cnt) as open_cnt,
+      sum(visit_cnt) as visit_cnt
+from unions
+group by 1,2,3,4,5
+), sums as 
+(
+select
+*,
+sum(account_cnt) over (partition by country) as total_country_account_cnt,
+sum(sent_cnt) over (partition by country) as total_country_sent_cnt,
+from final_groups
+), ranking as 
+(
+select
+      sent_date,
+      country,
+      send_interval,
+      is_verified,
+      is_unsubscribed,
+      sent_cnt,
+      open_cnt,
+      visit_cnt,
+      total_country_account_cnt,
+      total_country_sent_cnt,
+      dense_rank() over (order by total_country_account_cnt desc) as rank_total_country_account_cnt,
+      dense_rank() over (order by total_country_sent_cnt desc) as rank_total_country_sent_cnt
+
+from sums
+)
+
+select 
+      *
+from ranking
+where rank_total_country_account_cnt <=10 or rank_total_country_sent_cnt <=10
+order by 1,2 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
